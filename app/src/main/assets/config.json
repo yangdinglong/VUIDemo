@@ -1,0 +1,13 @@
+{
+  "timestamp":"1543458877",
+  "vocon": [
+    {
+      "language": "zh",
+      "configs": [{
+        "name": "wakeup",
+        "acmod": "acmod6_6000_mnc_rbo_wuw_f16_v1_0_0.dat",
+        "clc": "clc_mnc_cfg3_v6_5_000001.dat"
+      }
+      ]
+    }]
+}

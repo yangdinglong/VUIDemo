@@ -1,0 +1,41 @@
+#BNF+EMV2.1;
+!grammar roobo_wuw;
+!start <cloud_vad>;
+!start <exit>;
+!start <change_res>;
+!start <download> ;
+!start <pause>;
+!start <play>;
+!start <pre_res>;
+!start <next_res>;
+!start <rewind_ff>;
+!start <wakeup>;
+
+
+<cloud_vad> : !tag(GARBAGE_TAG, <...>);
+
+<wakeup> : !tag(WAKEUP,
+               智能管家!id(10403)
+            );
+            
+<exit> : !tag(EXIT_TAG,
+               再见!id(10402)
+            );
+            
+<change_res> : !tag(CHANGE_RES,
+               (换[个]台!id(10404)|换个节目!id(10404)|播放推荐!id(10404))
+               );
+               
+<download> : !tag(DOWNLOAD,
+               [开始|进行]下载!id(10405)|下载(节目!id(10405)|歌曲!id(10405)));
+               
+<pause> : !tag(PAUSE,
+               暂停!id(10406)|静音!id(10406)|[暂停|停止]播放!id(10406));
+<play> : !tag(PLAY,
+               [继续]播放!id(10407)|取消静音!id(10407));
+<pre_res> : !tag(PRE_RES,
+               上一(个!id(10408)|曲!id(10408)|期!id(10408)|首!id(10408)));
+<next_res> : !tag(NEXT_RES,
+               下一(个!id(10409)|曲!id(10409)|期!id(10409)|首!id(10409)));
+<rewind_ff> : !tag(REWIND_FF,
+               快(进!id(10410)|退!id(10411)));
