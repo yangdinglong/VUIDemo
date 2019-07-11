@@ -1,8 +1,6 @@
 package com.roobo.vuidemo;
 
 import android.app.ProgressDialog;
-import android.content.Context;
-import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -14,16 +12,13 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.Toast;
 
-import com.roobo.vui.RError;
-import com.roobo.vui.api.InitListener;
-import com.roobo.vui.api.VUIApi;
-import com.roobo.vui.api.tts.RTTSPlayer;
-import com.roobo.vui.business.auth.entity.UserInfo;
+import com.roobo.vuidemo.manager.RooboVUIManager;
+import com.roobo.vuidemo.manager.VUIInitListener;
 import com.roobo.vuidemo.utils.StatusBarUtil;
 
 import static com.roobo.vuidemo.MyApplication.TAG_HEAD;
 
-public class LoginActivity extends AppCompatActivity implements InitListener {
+public class LoginActivity extends AppCompatActivity {
 
     private static final String TAG = TAG_HEAD + LoginActivity.class.getSimpleName();
 
@@ -34,8 +29,6 @@ public class LoginActivity extends AppCompatActivity implements InitListener {
     private RadioButton mAutoRb;
     private RadioButton mManualRb;
     private RadioGroup mRG;
-
-    private boolean mIsAuto = true;
 
     private Handler mHandler = new Handler() {
         @Override
@@ -57,11 +50,11 @@ public class LoginActivity extends AppCompatActivity implements InitListener {
     };
 
     private void speak(String speakMessage) {
-        VUIApi.getInstance().speak(RTTSPlayer.TTSType.TYPE_OFFLINE, speakMessage);
+        RooboVUIManager.getInstance(this).TTSOffline(speakMessage);
         new Handler().postDelayed(new Runnable() {
             @Override
             public void run() {
-                if (mIsAuto) {
+                if (RooboVUIManager.getInstance(LoginActivity.this).isAuto()) {
                     AutoModelActivity.launch(LoginActivity.this);
                 } else {
                     ManualModeActivity.launch(LoginActivity.this);
@@ -91,9 +84,9 @@ public class LoginActivity extends AppCompatActivity implements InitListener {
             @Override
             public void onCheckedChanged(RadioGroup radioGroup, int i) {
                 if (i == mAutoRb.getId()) {
-                    mIsAuto = true;
+                    RooboVUIManager.getInstance(LoginActivity.this).setIsAuto(true);
                 } else {
-                    mIsAuto = false;
+                    RooboVUIManager.getInstance(LoginActivity.this).setIsAuto(false);
                 }
             }
         });
@@ -110,46 +103,24 @@ public class LoginActivity extends AppCompatActivity implements InitListener {
      * 初始化VUI SDK
      */
     private void initVUI() {
-        UserInfo userInfo = new UserInfo();
-        userInfo.setDeviceID(MyApplication.getDeviceID()); //必须设置此字段
-        userInfo.setAgentID(MyApplication.APP_ID); //必须设置此字段
-        userInfo.setPublicKey(MyApplication.PUBLIC_KEY); //必须设置此字段
-        VUIApi.getInstance().setLogLevel(5);//;日志级别0-5,默认是0, 最高级别是5
-        VUIApi.InitParam.InitParamBuilder builder = new VUIApi.InitParam.InitParamBuilder();
+        RooboVUIManager.getInstance(this).init(new VUIInitListener() {
+            @Override
+            public void onSuccess() {
+                Log.d(TAG, "VUIInitListener [onSuccess]");
+                dismissProgressDialog();
+                mHandler.obtainMessage(MyApplication.MSG_INIT_SUCCESS).sendToTarget();
+            }
 
-        builder.setEnv(VUIApi.EnvType.ENV_ONLINE)//请根据分配的Appid配置环境
-                .setUserInfo(userInfo)  //设置用户信息，必须设置
-                .addOfflineFileName("test_offline") //设置离线词文件，必须设置
-                .setAudioGenerator(new CustomAndroidAudioGenerator())//配置音频源
-                .setVUIType(mIsAuto ? VUIApi.VUIType.AUTO : VUIApi.VUIType.MANUAL);  //设置交互方式，AUTO（唤醒后采用VAD进行断句） MANUAL(手动断句)
-        VUIApi.getInstance().init(this, builder.build(), this);//绑定初始化监听器
+            @Override
+            public void onFail(int code, String message) {
+                Log.d(TAG, "VUIInitListener [onFail] code = " + code + "message=" + message);
+                dismissProgressDialog();
+                mHandler.obtainMessage(MyApplication.MSG_INIT_FAIL).sendToTarget();
+            }
+        });
         showProgressDialog();
     }
 
-
-    @Override
-    public void onSuccess() {
-        Log.d(TAG, "InitListener [onSuccess]");
-        reportLocation(); //上报wifi信息，用于识别中用到位置信息
-        dismissProgressDialog();
-        mHandler.obtainMessage(MyApplication.MSG_INIT_SUCCESS).sendToTarget();
-    }
-
-    @Override
-    public void onFail(RError message) {
-        Log.d(TAG, "InitListener [onFail] message = " + message.getFailDetail());
-        dismissProgressDialog();
-        mHandler.obtainMessage(MyApplication.MSG_INIT_FAIL).sendToTarget();
-    }
-
-    /**
-     * reportLocation wifi信息，只有上报了wifi信息，当用户查询跟位置相关的信息时才会返回结果，比如：今天的天气怎么样
-     */
-    private void reportLocation() {
-        WifiManager wifiManager = (WifiManager) getApplication().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        VUIApi.getInstance().reportLocationInfo(wifiManager.getScanResults());
-
-    }
 
     private void showProgressDialog() {
         if (mProgressDialog == null) {
@@ -159,8 +130,9 @@ public class LoginActivity extends AppCompatActivity implements InitListener {
             mProgressDialog.setMessage("正在初始化，请稍后...");
             mProgressDialog.setCancelable(false);
         }
-        if (!mProgressDialog.isShowing())
+        if (!LoginActivity.this.isFinishing() && mProgressDialog != null && !mProgressDialog.isShowing()) {
             mProgressDialog.show();
+        }
     }
 
     private void dismissProgressDialog() {

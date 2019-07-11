@@ -1,6 +1,6 @@
 package com.roobo.vuidemo;
 
-import android.app.AlertDialog;
+
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -24,15 +24,9 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.roobo.vui.RError;
-import com.roobo.vui.api.AutoTypeController;
-import com.roobo.vui.api.IASRController;
-import com.roobo.vui.api.VUIApi;
-import com.roobo.vui.api.asr.RASRListener;
-import com.roobo.vui.api.tts.RTTSPlayer;
-import com.roobo.vui.common.recognizer.ASRResult;
-import com.roobo.vui.common.recognizer.EventType;
-import com.roobo.vui.recognizer.OnAIResponseListener;
+import com.roobo.vuidemo.manager.RooboVUIManager;
+import com.roobo.vuidemo.manager.VUIASRListener;
+import com.roobo.vuidemo.manager.VUIAiListener;
 import com.roobo.vuidemo.utils.StatusBarUtil;
 
 import java.util.ArrayList;
@@ -40,7 +34,7 @@ import java.util.List;
 
 public class ManualModeActivity extends AppCompatActivity {
 
-    private static final String TAG = ManualModeActivity.class.getSimpleName();
+    private static final String TAG = MyApplication.TAG_HEAD + ManualModeActivity.class.getSimpleName();
 
     private Button mRecordBtn;
 
@@ -70,38 +64,6 @@ public class ManualModeActivity extends AppCompatActivity {
 
     private LinearLayoutManager mLinearLayoutManager;
 
-    //设置AI回调接口。AI返回的结果都在此接口中回调，如果不需要AI结果，可以不设置此回调接口。
-    private OnAIResponseListener aiResponseListener = new OnAIResponseListener() {
-        @Override
-        public void onResult(final String json) {
-            dismissProgressDialog();
-            Log.e(TAG, "OnAIResponseListener [onResult] json: " + json);
-            String query = AIResultParser.parserQueryFromAIResultJSON(json);
-            String hint = AIResultParser.parserHintFromAIResultJSON(json);
-            if (AIResultParser.isStartPlayer(json)) {
-                String url = AIResultParser.parserMP3UrlFromAIResultJSON(json);
-                if (!TextUtils.isEmpty(url)) {
-                    createData(query, hint);
-                    hintData.isMedia = true;
-                    MediaPlayerUtil.playByUrl(url);
-                    handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
-                }
-            } else if (AIResultParser.isExitPlayer(json)) {
-                MediaPlayerUtil.stop();
-            } else {
-                createData(query, hint);
-                handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
-            }
-        }
-
-        @Override
-        public void onFail(RError message) {
-            dismissProgressDialog();
-            Toast.makeText(ManualModeActivity.this, message.getFailDetail(), Toast.LENGTH_SHORT).show();
-            Log.e(TAG, "OnAIResponseListener [onFail]: " + message.getFailDetail());
-        }
-    };
-
     private void createData(String query, String hint) {
         queryData = new MyAdapter.MyData();
         queryData.text = query;
@@ -111,28 +73,6 @@ public class ManualModeActivity extends AppCompatActivity {
         hintData.isReveived = true;
         ttsSpeak(hint);
     }
-
-    private RASRListener mRASRListener=new RASRListener() {
-        @Override
-        public void onASRResult(ASRResult asrResult) {
-            Log.d(TAG, "RASRListener [onASRResult] asrResult:" + asrResult.getResultText());
-        }
-
-        @Override
-        public void onFail(RError rError) {
-            Log.d(TAG, "RASRListener [onFail] RError:" + rError.getFailDetail());
-        }
-
-        @Override
-        public void onWakeUp(String s) {
-            Log.d(TAG, "RASRListener [onWakeUp] s:" + s);
-        }
-
-        @Override
-        public void onEvent(EventType eventType) {
-            Log.d(TAG, "RASRListener [onEvent] EventType:" + eventType.name());
-        }
-    };
 
     public static void launch(Context context) {
         Intent intent = new Intent(context, ManualModeActivity.class);
@@ -170,19 +110,17 @@ public class ManualModeActivity extends AppCompatActivity {
             public boolean onTouch(View view, MotionEvent motionEvent) {
                 switch (motionEvent.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        IASRController mIASRController = VUIApi.getInstance().startRecognize();
-                        if (mIASRController instanceof AutoTypeController) {
-                            ((AutoTypeController) mIASRController).manualWakeup();
-                        }
+                        RooboVUIManager.getInstance(ManualModeActivity.this).startRecognize();
+                        RooboVUIManager.getInstance(ManualModeActivity.this).manualWakeup();
                         MediaPlayerUtil.stop();
-                        VUIApi.getInstance().stopSpeak();
+                        RooboVUIManager.getInstance(ManualModeActivity.this).stopTTS();
                         mRecordBtn.setBackgroundResource(R.drawable.record_btn_bg_pressed);
                         break;
                     case MotionEvent.ACTION_MOVE:
                         break;
                     default:
                         mRecordBtn.setBackgroundResource(R.drawable.record_btn_background);
-                        VUIApi.getInstance().stopRecognize();
+                        RooboVUIManager.getInstance(ManualModeActivity.this).stopRecognize();
                         showProgressDialog();
                         break;
                 }
@@ -198,16 +136,64 @@ public class ManualModeActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        VUIApi.getInstance().stopRecognize();
-        VUIApi.getInstance().release();
+        RooboVUIManager.getInstance(this).stopRecognize();
+        RooboVUIManager.getInstance(this).release();
         MediaPlayerUtil.stop();
         System.exit(0);
     }
 
     public void setVUIListener() {
-        VUIApi.getInstance().setCloudRecognizeMode(VUIApi.VUIRecognizeMode.VUI_MODE_AI);//设置有ai返回
-        VUIApi.getInstance().setOnAIResponseListener(aiResponseListener); //绑定AI监听器；如果不需要AI结果，可以不设置
-        VUIApi.getInstance().setASRListener(mRASRListener);
+        RooboVUIManager.getInstance(this).setAiListener(new VUIAiListener() {
+            @Override
+            public void onResult(String result) {
+                dismissProgressDialog();
+                Log.e(TAG, "VUIAiListener [onResult] result: " + result);
+                String query = AIResultParser.parserQueryFromAIResultJSON(result);
+                String hint = AIResultParser.parserHintFromAIResultJSON(result);
+                if (AIResultParser.isStartPlayer(result)) {
+                    String url = AIResultParser.parserMP3UrlFromAIResultJSON(result);
+                    if (!TextUtils.isEmpty(url)) {
+                        createData(query, hint);
+                        hintData.isMedia = true;
+                        MediaPlayerUtil.playByUrl(url);
+                        handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
+                    }
+                } else if (AIResultParser.isExitPlayer(result)) {
+                    MediaPlayerUtil.stop();
+                } else {
+                    createData(query, hint);
+                    handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
+                }
+            }
+
+            @Override
+            public void onFail(int code, String message) {
+                dismissProgressDialog();
+                Toast.makeText(ManualModeActivity.this, message, Toast.LENGTH_SHORT).show();
+                Log.d(TAG, "VUIAiListener [onFail] code=" + code + " message=" + message);
+            }
+        });
+        RooboVUIManager.getInstance(this).setASRListener(new VUIASRListener() {
+            @Override
+            public void onResult(String result) {
+                Log.d(TAG, "VUIASRListener [onResult] result:" + result);
+            }
+
+            @Override
+            public void onWakeUp(String result) {
+                Log.d(TAG, "VUIASRListener [onWakeUp] result:" + result);
+            }
+
+            @Override
+            public void onEvent(String event) {
+                Log.d(TAG, "VUIASRListener [onEvent] event:" + event);
+            }
+
+            @Override
+            public void onFail(int code, String message) {
+                Log.e(TAG, "VUIAiListener [onFail] code=" + code + " message=" + message);
+            }
+        });
     }
 
 
@@ -217,7 +203,7 @@ public class ManualModeActivity extends AppCompatActivity {
      * @param message tts播放的内容
      */
     private void ttsSpeak(String message) {
-        VUIApi.getInstance().speak(RTTSPlayer.TTSType.TYPE_ONLINE, message);
+        RooboVUIManager.getInstance(this).TTSOffline(message);
     }
 
     private void showProgressDialog() {

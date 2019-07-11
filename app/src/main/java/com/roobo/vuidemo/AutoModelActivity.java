@@ -1,7 +1,5 @@
 package com.roobo.vuidemo;
 
-import android.app.AlertDialog;
-import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -17,22 +15,16 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.roobo.vui.RError;
-import com.roobo.vui.api.AutoTypeController;
-import com.roobo.vui.api.IASRController;
-import com.roobo.vui.api.VUIApi;
-import com.roobo.vui.api.asr.RASRListener;
-import com.roobo.vui.api.tts.RTTSPlayer;
-import com.roobo.vui.common.recognizer.ASRResult;
-import com.roobo.vui.common.recognizer.EventType;
-import com.roobo.vui.recognizer.OnAIResponseListener;
+import com.roobo.vuidemo.manager.RooboVUIManager;
+import com.roobo.vuidemo.manager.TTSListener;
+import com.roobo.vuidemo.manager.VUIASRListener;
+import com.roobo.vuidemo.manager.VUIAiListener;
 import com.roobo.vuidemo.utils.StatusBarUtil;
 
 import org.json.JSONException;
@@ -51,15 +43,15 @@ public class AutoModelActivity extends AppCompatActivity {
 
     private RecyclerView mRecyclerView;
 
-    private MyAdapter mMyAdapter = new MyAdapter();
+    private DataAdapter mMyAdapter = new DataAdapter();
 
     private Handler handler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case MyApplication.MSG_AI_RESULT:
-                    mMyAdapter.addData(queryData);
-                    mMyAdapter.addData(hintData);
+                    mMyAdapter.addData(mQueryData);
+                    mMyAdapter.addData(mHintData);
                     moveToLast();
                     break;
                 default:
@@ -68,87 +60,20 @@ public class AutoModelActivity extends AppCompatActivity {
         }
     };
 
-    private MyAdapter.MyData queryData;
-    private MyAdapter.MyData hintData;
-
-    private ProgressDialog mProgressDialog;
+    private DataAdapter.MyData mQueryData;
+    private DataAdapter.MyData mHintData;
 
     private LinearLayoutManager mLinearLayoutManager;
 
-    private AutoTypeController mIASRController;
-
-    //设置AI回调接口。AI返回的结果都在此接口中回调，如果不需要AI结果，可以不设置此回调接口。
-    OnAIResponseListener aiResponseListener = new OnAIResponseListener() {
-        @Override
-        public void onResult(final String json) {
-            Log.e(TAG, "OnAIResponseListener [onResult] json: " + json);
-            String query = AIResultParser.parserQueryFromAIResultJSON(json);
-            String hint = AIResultParser.parserHintFromAIResultJSON(json);
-            if (AIResultParser.isStartPlayer(json)) {
-                String url = AIResultParser.parserMP3UrlFromAIResultJSON(json);
-                if (!TextUtils.isEmpty(url)) {
-                    createData(query, hint);
-                    hintData.isMedia = true;
-                    MediaPlayerUtil.playByUrl(url);
-                    handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
-                }
-            } else if (AIResultParser.isExitPlayer(json)) {
-                MediaPlayerUtil.stop();
-            } else {
-                createData(query, hint);
-                handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
-            }
-            mIASRController.pseudoSleep();//关闭在线识别，可以根据业务实际情况选择关闭的时间点
-        }
-
-        @Override
-        public void onFail(RError message) {
-            mIASRController.pseudoSleep();
-            Toast.makeText(AutoModelActivity.this, message.getFailDetail(), Toast.LENGTH_SHORT).show();
-            Log.e(TAG, "OnAIResponseListener [onFail]: " + message.getFailDetail());
-        }
-    };
-
     private void createData(String query, String hint) {
-        queryData = new MyAdapter.MyData();
-        queryData.text = query;
-        queryData.isReveived = false;
-        hintData = new MyAdapter.MyData();
-        hintData.text = hint;
-        hintData.isReveived = true;
+        mQueryData = new DataAdapter.MyData();
+        mQueryData.text = query;
+        mQueryData.isReveived = false;
+        mHintData = new DataAdapter.MyData();
+        mHintData.text = hint;
+        mHintData.isReveived = true;
         ttsSpeak(hint);
     }
-
-    private RASRListener mRASRListener = new RASRListener() {
-        @Override
-        public void onASRResult(ASRResult asrResult) {
-            Log.d(TAG, "RASRListener [onASRResult] asrResult:" + asrResult.getResultText());
-        }
-
-        @Override
-        public void onFail(RError rError) {
-            Log.d(TAG, "RASRListener [onFail] RError:" + rError.getFailDetail());
-        }
-
-        @Override
-        public void onWakeUp(String s) {
-            try {
-                JSONObject object = new JSONObject(s);
-                createData(object.optString("text"), "我在");
-                handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
-            } catch (JSONException e) {
-                e.printStackTrace();
-            }
-
-            Log.d(TAG, "RASRListener [onWakeUp] s:" + s);
-        }
-
-        @Override
-        public void onEvent(EventType eventType) {
-            Log.d(TAG, "RASRListener [onEvent] EventType:" + eventType.name());
-        }
-    };
-
 
     public static void launch(Context context) {
         Intent intent = new Intent(context, AutoModelActivity.class);
@@ -190,17 +115,73 @@ public class AutoModelActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        VUIApi.getInstance().stopRecognize();
-        VUIApi.getInstance().release();
+        RooboVUIManager.getInstance(this).stopRecognize();
+        RooboVUIManager.getInstance(this).release();
         MediaPlayerUtil.stop();
         System.exit(0);
     }
 
     public void setVUIListener() {
-        VUIApi.getInstance().setCloudRecognizeMode(VUIApi.VUIRecognizeMode.VUI_MODE_AI);//设置有ai返回
-        VUIApi.getInstance().setOnAIResponseListener(aiResponseListener); //绑定AI监听器；如果不需要AI结果，可以不设置
-        VUIApi.getInstance().setASRListener(mRASRListener);
-        mIASRController = (AutoTypeController) VUIApi.getInstance().startRecognize();//开始录音，唤醒后会一直在检查人声，如果要停止需要调用stopRecognize
+        RooboVUIManager.getInstance(this).setAiListener(new VUIAiListener() {
+            @Override
+            public void onResult(String result) {
+                Log.e(TAG, "VUIAiListener [onResult] result: " + result);
+                String query = AIResultParser.parserQueryFromAIResultJSON(result);
+                String hint = AIResultParser.parserHintFromAIResultJSON(result);
+                if (AIResultParser.isStartPlayer(result)) {
+                    String url = AIResultParser.parserMP3UrlFromAIResultJSON(result);
+                    if (!TextUtils.isEmpty(url)) {
+                        createData(query, hint);
+                        mHintData.isMedia = true;
+                        MediaPlayerUtil.playByUrl(url);
+                        handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
+                    }
+                } else if (AIResultParser.isExitPlayer(result)) {
+                    MediaPlayerUtil.stop();
+                } else {
+                    createData(query, hint);
+                    handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
+                }
+                RooboVUIManager.getInstance(AutoModelActivity.this).pseudoSleep();//关闭在线识别，可以根据业务实际情况选择关闭的时间点
+            }
+
+            @Override
+            public void onFail(int code, String message) {
+                RooboVUIManager.getInstance(AutoModelActivity.this).pseudoSleep();//关闭在线识别，可以根据业务实际情况选择关闭的时间点
+                Toast.makeText(AutoModelActivity.this, message, Toast.LENGTH_SHORT).show();
+                Log.d(TAG, "VUIAiListener [onFail] code=" + code + " message=" + message);
+            }
+        });
+        RooboVUIManager.getInstance(this).setASRListener(new VUIASRListener() {
+            @Override
+            public void onResult(String result) {
+                Log.d(TAG, "VUIASRListener [onResult] result:" + result);
+            }
+
+            @Override
+            public void onWakeUp(String result) {
+                Log.d(TAG, "VUIASRListener [onWakeUp] result:" + result);
+                try {
+                    JSONObject object = new JSONObject(result);
+                    createData(object.optString("text"), "我在");
+                    handler.obtainMessage(MyApplication.MSG_AI_RESULT).sendToTarget();
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+                RooboVUIManager.getInstance(AutoModelActivity.this).manualWakeup();
+            }
+
+            @Override
+            public void onEvent(String event) {
+                Log.d(TAG, "VUIASRListener [onEvent] event:" + event);
+            }
+
+            @Override
+            public void onFail(int code, String message) {
+                Log.e(TAG, "VUIAiListener [onFail] code=" + code + " message=" + message);
+            }
+        });
+        RooboVUIManager.getInstance(this).startRecognize();//开始录音，唤醒后会一直在检查人声，如果要停止需要调用stopRecognize
     }
 
 
@@ -210,10 +191,30 @@ public class AutoModelActivity extends AppCompatActivity {
      * @param message tts播放的内容
      */
     private void ttsSpeak(String message) {
-        VUIApi.getInstance().speak(RTTSPlayer.TTSType.TYPE_ONLINE, message);
+        RooboVUIManager.getInstance(this).TTSOnline(message, new TTSListener() {
+            @Override
+            public void onSpeakBegin() {
+                Log.d(TAG, "RTTSListener [onSpeakBegin]");
+            }
+
+            @Override
+            public void onCompleted() {
+                Log.d(TAG, "RTTSListener [onCompleted]");
+            }
+
+            @Override
+            public void onStop() {
+                Log.d(TAG, "RTTSListener [onStop]");
+            }
+
+            @Override
+            public void onError(int i) {
+                Log.d(TAG, "RTTSListener [onError] i;" + i);
+            }
+        });
     }
 
-    public static class MyAdapter extends RecyclerView.Adapter<MyAdapter.MyViewHolder> {
+    public static class DataAdapter extends RecyclerView.Adapter<DataAdapter.MyViewHolder> {
 
         private List<MyData> mData = new ArrayList<>();
 
@@ -226,7 +227,7 @@ public class AutoModelActivity extends AppCompatActivity {
             }
         }
 
-        public MyAdapter() {
+        public DataAdapter() {
         }
 
         public void addData(MyData data) {
